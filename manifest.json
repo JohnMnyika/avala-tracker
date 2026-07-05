@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Avala Work Tracker",
+  "description": "Tracks Avala dataset work from Avala job links and shows a local dashboard.",
+  "version": "1.0.0",
+  "permissions": ["storage", "tabs", "webNavigation", "notifications"],
+  "host_permissions": ["https://avala.ai/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Avala Work Tracker",
+    "default_popup": "popup.html"
+  }
+}

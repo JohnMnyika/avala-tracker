@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Avala Work Tracker</title>
+    <link rel="stylesheet" href="dashboard.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Avala Work Tracker</p>
+          <h1>Productivity Dashboard</h1>
+        </div>
+        <div class="actions">
+          <button id="themeButton" type="button">Dark Mode</button>
+          <button id="refreshButton" type="button">Refresh</button>
+          <button id="exportButton" type="button">Export CSV</button>
+          <button id="clearButton" type="button" class="danger">Clear</button>
+        </div>
+      </header>
+
+      <section class="controls" aria-label="Dashboard controls">
+        <input id="searchInput" type="search" placeholder="Search dataset, camera, sequence, or work unit">
+        <select id="datasetFilter" aria-label="Filter by dataset">
+          <option value="">All datasets</option>
+        </select>
+        <select id="cameraFilter" aria-label="Filter by camera">
+          <option value="">All cameras</option>
+        </select>
+        <label>
+          Rate/task
+          <input id="rateInput" type="number" min="0" step="0.01" value="0">
+        </label>
+        <label>
+          Daily goal
+          <input id="goalInput" type="number" min="1" step="1" value="20">
+        </label>
+      </section>
+
+      <section class="stats" aria-label="Summary metrics">
+        <article><span id="todayTasks">0</span><p>Total Tasks Worked Today</p></article>
+        <article><span id="weekTasks">0</span><p>Total Tasks Worked This Week</p></article>
+        <article><span id="monthTasks">0</span><p>Total Tasks Worked This Month</p></article>
+        <article><span id="todayTime">0m</span><p>Total Time Worked Today</p></article>
+        <article><span id="weekTime">0m</span><p>Total Time Worked This Week</p></article>
+        <article><span id="monthTime">0m</span><p>Total Time Worked This Month</p></article>
+        <article><span id="avgTime">0m</span><p>Average Time Per Task</p></article>
+        <article><span id="tasksPerHour">0</span><p>Tasks Per Hour</p></article>
+        <article><span id="estimatedEarnings">$0.00</span><p>Estimated Earnings</p></article>
+      </section>
+
+      <section class="charts" aria-label="Productivity charts">
+        <article>
+          <div class="sectionHead"><h2>Daily Tasks Completed</h2><span id="dailyTrend">-</span></div>
+          <canvas id="dailyChart" height="170"></canvas>
+        </article>
+        <article>
+          <div class="sectionHead"><h2>Weekly Productivity</h2><span id="weeklyTrend">-</span></div>
+          <canvas id="weeklyChart" height="170"></canvas>
+        </article>
+        <article>
+          <div class="sectionHead"><h2>Monthly Productivity</h2><span id="monthlyTrend">-</span></div>
+          <canvas id="monthlyChart" height="170"></canvas>
+        </article>
+        <article>
+          <div class="sectionHead"><h2>Time Spent Per Dataset</h2><span>hours</span></div>
+          <canvas id="datasetTimeChart" height="170"></canvas>
+        </article>
+        <article>
+          <div class="sectionHead"><h2>Time Spent Per Camera</h2><span>hours</span></div>
+          <canvas id="cameraTimeChart" height="170"></canvas>
+        </article>
+      </section>
+
+      <section class="gridTwo">
+        <article class="panel">
+          <div class="sectionHead"><h2>Dataset Performance Ranking</h2><span id="topDataset">-</span></div>
+          <ol id="datasetRanking" class="ranking"></ol>
+        </article>
+        <article class="panel">
+          <div class="sectionHead"><h2>Reports</h2><span>weekly / monthly</span></div>
+          <div class="reportGrid">
+            <div><strong id="weeklyReportTasks">0</strong><p>Weekly tasks</p></div>
+            <div><strong id="weeklyReportTime">0m</strong><p>Weekly time</p></div>
+            <div><strong id="monthlyReportTasks">0</strong><p>Monthly tasks</p></div>
+            <div><strong id="monthlyReportTime">0m</strong><p>Monthly time</p></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="tables">
+        <article class="tableWrap" aria-label="Recent Activity">
+          <div class="sectionHead"><h2>Recent Activity</h2><span id="activityCount">0 records</span></div>
+          <table>
+            <thead>
+              <tr>
+                <th>Dataset</th>
+                <th>Camera</th>
+                <th>Start Time</th>
+                <th>End Time</th>
+                <th>Duration</th>
+                <th>Link</th>
+              </tr>
+            </thead>
+            <tbody id="activityBody"></tbody>
+          </table>
+          <p class="empty">Open an Avala job link and it will appear here.</p>
+        </article>
+
+        <article class="tableWrap" aria-label="Dataset Statistics">
+          <div class="sectionHead"><h2>Dataset Statistics</h2><span id="datasetCount">0 datasets</span></div>
+          <table>
+            <thead>
+              <tr>
+                <th>Dataset Name</th>
+                <th>Number of Tasks</th>
+                <th>Total Time Spent</th>
+              </tr>
+            </thead>
+            <tbody id="datasetStatsBody"></tbody>
+          </table>
+        </article>
+
+        <article class="tableWrap" aria-label="Camera Statistics">
+          <div class="sectionHead"><h2>Camera Statistics</h2><span id="cameraCount">0 cameras</span></div>
+          <table>
+            <thead>
+              <tr>
+                <th>Camera Name</th>
+                <th>Number of Tasks Completed</th>
+              </tr>
+            </thead>
+            <tbody id="cameraStatsBody"></tbody>
+          </table>
+        </article>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="dashboard.js"></script>
+  </body>
+</html>
