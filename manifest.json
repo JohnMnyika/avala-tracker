@@ -3,8 +3,15 @@
   "name": "Avala Work Tracker",
   "description": "Tracks Avala dataset work from Avala job links and shows a local dashboard.",
   "version": "1.0.0",
-  "permissions": ["storage", "tabs", "webNavigation", "notifications"],
-  "host_permissions": ["https://avala.ai/*"],
+  "permissions": ["storage", "tabs", "webNavigation", "notifications", "activeTab"],
+  "host_permissions": ["https://avala.ai/*", "https://*.avala.ai/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://avala.ai/*"],
+      "js": ["contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "background": {
     "service_worker": "background.js"
   },

@@ -9,32 +9,65 @@
       return null;
     }
 
-    if (url.hostname !== "avala.ai") return null;
-
-    const datasetMatch = url.pathname.match(/\/datasets\/([^/]+)/);
-    const sequenceMatch = url.pathname.match(/\/sequences\/([^/?#]+)/);
-    if (!datasetMatch || !sequenceMatch) return null;
+    const hostname = (url.hostname || "").toLowerCase();
+    if (hostname !== "avala.ai" && !hostname.endsWith(".avala.ai")) return null;
 
     const params = url.searchParams;
     const capturedAt = now ? new Date(now) : new Date();
+    const pathname = url.pathname || "";
+    const datasetMatch = pathname.match(/\/datasets\/([^/?#]+)/);
+    const sequenceMatch = pathname.match(/\/sequences\/([^/?#]+)/);
+    const burroMatch = pathname.match(/\/@burro\/slices\/([^/?#]+)\/items\/([^/?#]+)/);
+
+    const workUnitUid = params.get("work_unit_uid") || params.get("workUnitUid") || "";
+    const sequenceId = sequenceMatch ? decodeURIComponent(sequenceMatch[1]) : params.get("sequence_id") || params.get("sequenceId") || "";
+    const dataset = datasetMatch ? decodeURIComponent(datasetMatch[1]) : "";
+
+    if (burroMatch) {
+      const slice = decodeURIComponent(burroMatch[1]);
+      const itemId = decodeURIComponent(burroMatch[2]);
+      const projectType = "Burro Segmentation";
+      return {
+        id: itemId || [projectType, slice].join("|"),
+        projectType,
+        dataset: "Burro",
+        slice,
+        itemId,
+        sequenceId: "",
+        workUnitUid: "",
+        url: rawUrl,
+        title: `${projectType} · ${slice}`,
+        firstSeenAt: capturedAt.toISOString(),
+        lastSeenAt: capturedAt.toISOString(),
+        visits: 1,
+        completed: false
+      };
+    }
+
+    if (!datasetMatch && !sequenceMatch && !workUnitUid) return null;
+
+    const projectType = "2D Annotation";
     const camera =
       parseCameraFromViewport(params.get("canvas_viewport")) ||
       parseCameraFromLayout(params.get("layout")) ||
       "Unknown";
 
     return {
-      id: buildRecordId(url, datasetMatch[1], sequenceMatch[1], camera),
-      dataset: decodeURIComponent(datasetMatch[1]),
-      sequence: decodeURIComponent(sequenceMatch[1]),
+      id: workUnitUid || buildRecordId(dataset, sequenceId || "unknown", camera),
+      projectType,
+      dataset,
+      sequenceId,
+      workUnitUid,
       camera,
-      workUnitUid: params.get("work_unit_uid") || "",
       cuboidTrackingUid: params.get("cuboid_tracking_uid") || "",
       loadRange: params.get("load") || "",
       preview: params.get("preview") || "",
       url: rawUrl,
+      title: `${projectType} · ${dataset}`,
       firstSeenAt: capturedAt.toISOString(),
       lastSeenAt: capturedAt.toISOString(),
-      visits: 1
+      visits: 1,
+      completed: false
     };
   }
 
@@ -52,10 +85,8 @@
     return match ? match[1].trim() : "";
   }
 
-  function buildRecordId(url, dataset, sequence, camera) {
-    const workUnitUid = url.searchParams.get("work_unit_uid");
-    if (workUnitUid) return workUnitUid;
-    return [dataset, sequence, camera].join("|");
+  function buildRecordId(dataset, sequenceId, camera) {
+    return [dataset, sequenceId, camera].filter(Boolean).join("|");
   }
 
   function safeDecode(value) {

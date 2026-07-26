@@ -1,34 +1,54 @@
 # Avala Work Tracker
 
-Chrome extension for tracking Avala job links locally.
+Chrome extension for tracking Avala annotation work automatically and presenting it through a professional productivity dashboard.
 
 ## What It Tracks
 
-- Dataset number, for example `v1-batch-000g5-sf-bev`
-- Camera, for example `FNC`
-- Sequence id
-- Work unit id
-- Date and time the link was detected
-- Start time, end time, and duration
-- Visit count for the same work unit
+- Project type: 2D Annotation or Burro Segmentation
+- Dataset name, sequence ID, slice, item ID, and work unit UID
+- Start time, end time, and time spent
+- Automatic session tracking when Avala tabs are opened and revisited
+- Daily/weekly/monthly productivity summaries and dataset/project analytics
 
-## Dashboard
+## Dashboard Highlights
 
-Open the extension popup and click **Open Dashboard**. The dashboard includes:
+Open the extension popup and click Open Dashboard. The dashboard now includes:
 
 - Today, weekly, and monthly task totals
-- Today, weekly, and monthly time totals
-- Average time per task and tasks per hour
-- Recent activity, dataset statistics, and camera statistics tables
-- Daily, weekly, monthly, dataset-time, and camera-time charts
-- Dark mode, search, dataset/camera filters, CSV export, rankings, reports, productivity goal notifications, and estimated earnings by rate per task
+- Today, weekly, and monthly hours
+- Average time per task, tasks per hour, and earnings estimates
+- Most worked dataset and project cards
+- Current active task, longest/shortest sessions, and total sessions
+- Smart timeline events, project and dataset analytics, and export support
 
 ## Load It In Chrome
 
-1. Open `chrome://extensions`.
-2. Turn on **Developer mode**.
-3. Click **Load unpacked**.
-4. Select this project folder: `/home/spike/Desktop/Projects/avala-tracker`.
-5. Open Avala job links normally. The extension will track matching `https://avala.ai/.../datasets/.../sequences/...` links.
+1. Open chrome://extensions.
+2. Turn on Developer mode.
+3. Click Load unpacked.
+4. Select this project folder: /home/spike/Desktop/Projects/avala-tracker.
+5. Open Avala task pages normally. The extension will detect them automatically.
 
-Use the extension popup to open the dashboard or manually track the current tab.
+## Testing
+
+Run the parser regression tests:
+
+```bash
+node --test tests/parser.test.js
+```
+
+## Developer Utilities
+
+- Import exported project data:
+
+```bash
+node scripts/import-projects.js path/to/avala-projects.json
+```
+
+- Watch for auto-imported project exports:
+
+```bash
+node scripts/watch-and-import.js avala-projects.json
+```
+
+The extension also seeds a default Burro Segmentation project on install so it appears immediately in the dashboard.

@@ -1,0 +1,9 @@
+{
+  "v1-batch-000g5-sf-bev": {
+    "title": "Burro Image Segmentation",
+    "dataset": "v1-batch-000g5-sf-bev",
+    "sequences": ["seq1"],
+    "url": "https://avala.ai/@burro/slices/20260402t103311-0400-label/items/5a4d528e-59f3-44b5-ae80-9d9e8847f8a6?viewport=-445.457:-61.671:1235.351:894.903",
+    "firstSeenAt": "2026-07-06T00:00:00Z"
+  }
+}

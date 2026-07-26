@@ -22,12 +22,12 @@
       </header>
 
       <section class="controls" aria-label="Dashboard controls">
-        <input id="searchInput" type="search" placeholder="Search dataset, camera, sequence, or work unit">
+        <input id="searchInput" type="search" placeholder="Search dataset, project, sequence, slice, or item ID">
         <select id="datasetFilter" aria-label="Filter by dataset">
           <option value="">All datasets</option>
         </select>
-        <select id="cameraFilter" aria-label="Filter by camera">
-          <option value="">All cameras</option>
+        <select id="cameraFilter" aria-label="Filter by project type">
+          <option value="">All project types</option>
         </select>
         <label>
           Rate/task
@@ -40,15 +40,24 @@
       </section>
 
       <section class="stats" aria-label="Summary metrics">
-        <article><span id="todayTasks">0</span><p>Total Tasks Worked Today</p></article>
-        <article><span id="weekTasks">0</span><p>Total Tasks Worked This Week</p></article>
-        <article><span id="monthTasks">0</span><p>Total Tasks Worked This Month</p></article>
-        <article><span id="todayTime">0m</span><p>Total Time Worked Today</p></article>
-        <article><span id="weekTime">0m</span><p>Total Time Worked This Week</p></article>
-        <article><span id="monthTime">0m</span><p>Total Time Worked This Month</p></article>
-        <article><span id="avgTime">0m</span><p>Average Time Per Task</p></article>
-        <article><span id="tasksPerHour">0</span><p>Tasks Per Hour</p></article>
+        <article><span id="todayTasks">0</span><p>Tasks Today</p></article>
+        <article><span id="weekTasks">0</span><p>Tasks This Week</p></article>
+        <article><span id="monthTasks">0</span><p>Tasks This Month</p></article>
+        <article><span id="todayTime">0m</span><p>Hours Today</p></article>
+        <article><span id="weekTime">0m</span><p>Hours This Week</p></article>
+        <article><span id="monthTime">0m</span><p>Hours This Month</p></article>
+        <article><span id="avgTime">0m</span><p>Average per Task</p></article>
+        <article><span id="tasksPerHour">0</span><p>Tasks / Hour</p></article>
         <article><span id="estimatedEarnings">$0.00</span><p>Estimated Earnings</p></article>
+        <article><span id="mostWorkedDataset">—</span><p>Most Worked Dataset</p></article>
+        <article><span id="mostWorkedProject">—</span><p>Most Worked Project</p></article>
+        <article><span id="activeTask">—</span><p>Current Active Task</p></article>
+        <article><span id="weeklyHours">0h</span><p>Weekly Hours</p></article>
+        <article><span id="monthlyHours">0h</span><p>Monthly Hours</p></article>
+        <article><span id="longestSession">0m</span><p>Longest Session</p></article>
+        <article><span id="shortestSession">0m</span><p>Shortest Session</p></article>
+        <article><span id="totalSessions">0</span><p>Total Sessions</p></article>
+        <article><span id="productivityScore">0%</span><p>Productivity Score</p></article>
       </section>
 
       <section class="charts" aria-label="Productivity charts">
@@ -86,6 +95,31 @@
             <div><strong id="weeklyReportTime">0m</strong><p>Weekly time</p></div>
             <div><strong id="monthlyReportTasks">0</strong><p>Monthly tasks</p></div>
             <div><strong id="monthlyReportTime">0m</strong><p>Monthly time</p></div>
+          </div>
+        </article>
+        <article class="panel">
+          <div class="sectionHead"><h2>Projects</h2><span id="projectsCount">0</span></div>
+          <div id="projectsList">
+            <p class="empty">No projects tracked yet.</p>
+          </div>
+          <div style="margin-top:8px">
+            <button id="addBurroBtn" type="button">Add Burro Image Segmentation</button>
+          </div>
+        </article>
+      </section>
+
+      <section class="gridTwo">
+        <article class="panel">
+          <div class="sectionHead"><h2>Smart Timeline</h2><span id="timelineCount">0 events</span></div>
+          <ul id="timelineList" class="timelineList"></ul>
+        </article>
+        <article class="panel">
+          <div class="sectionHead"><h2>Live Snapshot</h2><span>Focus and pace</span></div>
+          <div class="reportGrid">
+            <div><strong id="highlightDataset">—</strong><p>Most worked dataset</p></div>
+            <div><strong id="highlightProject">—</strong><p>Most worked project</p></div>
+            <div><strong id="highlightActive">—</strong><p>Active task</p></div>
+            <div><strong id="highlightSessions">0</strong><p>Tracked sessions</p></div>
           </div>
         </article>
       </section>

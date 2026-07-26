@@ -1,11 +1,19 @@
 const STORAGE_KEY = "avalaWorkRecords";
+const TASKS_KEY = "avalaTasks";
+const SESSIONS_KEY = "avalaSessions";
+const DATASETS_KEY = "avalaDatasets";
+const PROJECTS_KEY = "avalaProjects";
+const SETTINGS_KEY = "avalaSettings";
 const ACTIVE_TASK_KEY = "avalaActiveTaskId";
-const SETTINGS_KEY = "avalaDashboardSettings";
+const ACTIVE_SESSION_KEY = "avalaActiveSession";
 const DEFAULT_SETTINGS = {
-  darkMode: false,
+  darkMode: true,
   ratePerTask: 0,
   dailyGoal: 20,
-  notifiedGoalDate: ""
+  notifiedGoalDate: "",
+  targetHours: 6,
+  targetTasks: 20,
+  targetDatasets: 5
 };
 
 const elements = {
@@ -24,28 +32,58 @@ const elements = {
   toast: document.querySelector("#toast")
 };
 
+elements.projectsCount = document.querySelector("#projectsCount");
+elements.projectsList = document.querySelector("#projectsList");
+elements.addBurroBtn = document.querySelector("#addBurroBtn");
+
+elements.summary = {
+  todayTasks: document.querySelector("#todayTasks"),
+  todayTime: document.querySelector("#todayTime"),
+  weekTasks: document.querySelector("#weekTasks"),
+  monthTasks: document.querySelector("#monthTasks"),
+  weekTime: document.querySelector("#weekTime"),
+  monthTime: document.querySelector("#monthTime"),
+  avgTime: document.querySelector("#avgTime"),
+  tasksPerHour: document.querySelector("#tasksPerHour"),
+  estimatedEarnings: document.querySelector("#estimatedEarnings")
+};
+
 let records = [];
+let tasks = [];
+let sessions = [];
+let datasets = {};
+let projects = {};
 let settings = { ...DEFAULT_SETTINGS };
 let activeTaskId = "";
+let activeSessionId = "";
+
+const STORAGE_KEYS = { records: STORAGE_KEY, tasks: TASKS_KEY, sessions: SESSIONS_KEY, datasets: DATASETS_KEY, projects: PROJECTS_KEY, settings: SETTINGS_KEY, activeTask: ACTIVE_TASK_KEY, activeSession: ACTIVE_SESSION_KEY };
 
 document.addEventListener("DOMContentLoaded", init);
 setInterval(() => {
-  if (activeTaskId) render();
+  if (activeTaskId || activeSessionId) render();
 }, 30000);
+
 elements.refreshButton.addEventListener("click", loadState);
 elements.searchInput.addEventListener("input", render);
 elements.datasetFilter.addEventListener("change", render);
 elements.cameraFilter.addEventListener("change", render);
-elements.exportButton.addEventListener("click", exportCsv);
+elements.exportButton.addEventListener("click", exportDashboardData);
 elements.clearButton.addEventListener("click", clearRecords);
 elements.themeButton.addEventListener("click", toggleTheme);
 elements.rateInput.addEventListener("input", saveSettingsFromInputs);
 elements.goalInput.addEventListener("input", saveSettingsFromInputs);
+elements.addBurroBtn?.addEventListener("click", addBurroProject);
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") return;
   if (changes[ACTIVE_TASK_KEY]) activeTaskId = changes[ACTIVE_TASK_KEY].newValue || "";
+  if (changes[ACTIVE_SESSION_KEY]) activeSessionId = changes[ACTIVE_SESSION_KEY].newValue || "";
   if (changes[STORAGE_KEY]) records = normalizeRecords(changes[STORAGE_KEY].newValue || []);
+  if (changes[TASKS_KEY]) tasks = changes[TASKS_KEY].newValue || [];
+  if (changes[SESSIONS_KEY]) sessions = changes[SESSIONS_KEY].newValue || [];
+  if (changes[DATASETS_KEY]) datasets = changes[DATASETS_KEY].newValue || {};
+  if (changes[PROJECTS_KEY]) projects = changes[PROJECTS_KEY].newValue || {};
   if (changes[SETTINGS_KEY]) settings = { ...DEFAULT_SETTINGS, ...(changes[SETTINGS_KEY].newValue || {}) };
   applySettingsToControls();
   render();
@@ -58,14 +96,75 @@ async function init() {
 async function loadState() {
   const result = await chrome.storage.local.get({
     [STORAGE_KEY]: [],
+    [TASKS_KEY]: [],
+    [SESSIONS_KEY]: [],
+    [DATASETS_KEY]: {},
+    [PROJECTS_KEY]: {},
+    [SETTINGS_KEY]: DEFAULT_SETTINGS,
     [ACTIVE_TASK_KEY]: "",
-    [SETTINGS_KEY]: DEFAULT_SETTINGS
+    [ACTIVE_SESSION_KEY]: ""
   });
   activeTaskId = result[ACTIVE_TASK_KEY] || "";
+  activeSessionId = result[ACTIVE_SESSION_KEY] || "";
   records = normalizeRecords(result[STORAGE_KEY]);
+  tasks = Array.isArray(result[TASKS_KEY]) ? result[TASKS_KEY] : [];
+  sessions = Array.isArray(result[SESSIONS_KEY]) ? result[SESSIONS_KEY] : [];
+  datasets = result[DATASETS_KEY] || {};
+  projects = result[PROJECTS_KEY] || {};
   settings = { ...DEFAULT_SETTINGS, ...(result[SETTINGS_KEY] || {}) };
+  renderProjects(projects);
   applySettingsToControls();
   render();
+}
+
+function renderProjects(projectsMap) {
+  const listEl = elements.projectsList;
+  const keys = Object.keys(projectsMap || {}).sort();
+  elements.projectsCount && (elements.projectsCount.textContent = `${keys.length}`);
+  listEl.replaceChildren();
+  if (!keys.length) {
+    const p = document.createElement("p");
+    p.className = "empty";
+    p.textContent = "No projects tracked yet.";
+    listEl.appendChild(p);
+    return;
+  }
+  const ul = document.createElement("ul");
+  for (const key of keys) {
+    const project = projectsMap[key];
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = project.url || "#";
+    a.target = "_blank";
+    a.textContent = project.title || key;
+    li.appendChild(a);
+    if (project.dataset || project.projectType) {
+      const small = document.createElement("small");
+      small.textContent = ` — ${project.projectType || "Avala"}${project.dataset ? ` · ${project.dataset}` : ""}`;
+      li.appendChild(small);
+    }
+    ul.appendChild(li);
+  }
+  listEl.appendChild(ul);
+}
+
+async function addBurroProject() {
+  const key = "burro-segmentation";
+  const project = {
+    title: "Burro Segmentation",
+    dataset: "Burro",
+    projectType: "Burro Segmentation",
+    slices: [],
+    url: "https://avala.ai/@burro/slices/20260402t103311-0400-label/items/5a4d528e-59f3-44b5-ae80-9d9e8847f8a6",
+    firstSeenAt: new Date().toISOString()
+  };
+  const res = await chrome.storage.local.get({ [PROJECTS_KEY]: {} });
+  const projectsMap = res[PROJECTS_KEY] || {};
+  projectsMap[key] = project;
+  await chrome.storage.local.set({ [PROJECTS_KEY]: projectsMap });
+  projects = projectsMap;
+  renderProjects(projects);
+  showToast("Added Burro Segmentation to the dashboard.");
 }
 
 function normalizeRecords(sourceRecords) {
@@ -77,42 +176,32 @@ function normalizeRecords(sourceRecords) {
       ...record,
       startTime,
       endTime,
-      durationMs: Number.isFinite(record.durationMs)
-        ? record.durationMs
-        : calculateDurationMs(startTime, endTime)
+      durationMs: Number.isFinite(record.durationMs) ? record.durationMs : calculateDurationMs(startTime, endTime)
     };
   }).sort((a, b) => new Date(b.endTime) - new Date(a.endTime));
 }
 
 function render() {
-  records = normalizeRecords(records);
   const filtered = getFilteredRecords();
-  const periods = getPeriodRecords(records);
+  const periods = getPeriodRecords(filtered);
+  const overview = buildOverviewData(filtered, periods);
   renderFilterOptions(records);
-  renderMetrics(periods);
-  renderCharts(records);
-  renderRankings(records);
-  renderReports(periods);
+  renderMetrics(overview, periods);
+  renderCharts(filtered, periods);
+  renderAnalytics(filtered, periods);
   renderTables(filtered);
+  renderProjects(projects);
   checkGoalNotification(periods.today.length);
 }
 
 function getFilteredRecords() {
   const query = elements.searchInput.value.trim().toLowerCase();
   const dataset = elements.datasetFilter.value;
-  const camera = elements.cameraFilter.value;
-
+  const projectType = elements.cameraFilter.value;
   return records.filter((record) => {
-    const haystack = [
-      record.dataset,
-      record.camera,
-      record.sequence,
-      record.workUnitUid,
-      record.loadRange,
-      record.preview
-    ].join(" ").toLowerCase();
+    const haystack = [record.dataset, record.projectType, record.sequenceId, record.slice, record.itemId, record.workUnitUid, record.url].join(" ").toLowerCase();
     return (!dataset || record.dataset === dataset) &&
-      (!camera || record.camera === camera) &&
+      (!projectType || record.projectType === projectType) &&
       (!query || haystack.includes(query));
   });
 }
@@ -122,7 +211,6 @@ function getPeriodRecords(sourceRecords) {
   const todayStart = startOfDay(now);
   const weekStart = startOfWeek(now);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
   return {
     today: sourceRecords.filter((record) => new Date(record.endTime) >= todayStart),
     week: sourceRecords.filter((record) => new Date(record.endTime) >= weekStart),
@@ -130,23 +218,77 @@ function getPeriodRecords(sourceRecords) {
   };
 }
 
-function renderMetrics(periods) {
-  const totalDuration = sumDuration(records);
+function buildOverviewData(sourceRecords, periods) {
+  const todayDuration = sumDuration(periods.today);
+  const weekDuration = sumDuration(periods.week);
+  const monthDuration = sumDuration(periods.month);
+  const totalDuration = sumDuration(sourceRecords);
   const totalHours = totalDuration / 3600000;
-  setText("todayTasks", periods.today.length);
-  setText("weekTasks", periods.week.length);
-  setText("monthTasks", periods.month.length);
-  setText("todayTime", formatDuration(sumDuration(periods.today)));
-  setText("weekTime", formatDuration(sumDuration(periods.week)));
-  setText("monthTime", formatDuration(sumDuration(periods.month)));
-  setText("avgTime", formatDuration(records.length ? totalDuration / records.length : 0));
-  setText("tasksPerHour", totalHours > 0 ? (records.length / totalHours).toFixed(2) : "0");
-  setText("estimatedEarnings", formatMoney(records.length * Number(settings.ratePerTask || 0)));
+  const avgDuration = sourceRecords.length ? totalDuration / sourceRecords.length : 0;
+  const projectsSeen = new Set(sourceRecords.map((record) => record.projectType).filter(Boolean));
+  const datasetsSeen = new Set(sourceRecords.map((record) => record.dataset).filter(Boolean));
+  const longestSession = sourceRecords.reduce((best, record) => (record.durationMs > best.durationMs ? record : best), { durationMs: 0 });
+  const shortestSession = sourceRecords.reduce((best, record) => (record.durationMs < best.durationMs && record.durationMs > 0 ? record : best), { durationMs: Number.POSITIVE_INFINITY });
+  return {
+    todayDuration,
+    weekDuration,
+    monthDuration,
+    totalDuration,
+    totalHours,
+    avgDuration,
+    todayTasks: periods.today.length,
+    weekTasks: periods.week.length,
+    monthTasks: periods.month.length,
+    projectsSeen,
+    datasetsSeen,
+    longestSession,
+    shortestSession,
+    taskRate: totalHours > 0 ? sourceRecords.length / totalHours : 0,
+    earnings: sourceRecords.length * Number(settings.ratePerTask || 0)
+  };
+}
+
+function renderMetrics(overview, periods) {
+  const mostWorkedDataset = Object.entries(groupBy(records, "dataset")).sort((a, b) => b[1].tasks - a[1].tasks)[0]?.[0] || "—";
+  const mostWorkedProject = Object.entries(groupBy(records, "projectType")).sort((a, b) => b[1].tasks - a[1].tasks)[0]?.[0] || "—";
+  const activeLabel = tasks.find((task) => task.id === activeTaskId)?.title || "—";
+  const weeklyHours = Math.round(sumDuration(periods.week) / 3600000);
+  const monthlyHours = Math.round(sumDuration(periods.month) / 3600000);
+  const longestMinutes = Math.round(Math.max(0, overview.longestSession.durationMs || 0) / 60000);
+  const shortestMinutes = Math.round(Math.min(Number.POSITIVE_INFINITY, overview.shortestSession.durationMs || 0) / 60000);
+  const score = records.length ? Math.min(100, Math.round((overview.todayTasks / Math.max(1, Number(settings.dailyGoal || 20))) * 100)) : 0;
+
+  setText("todayTasks", overview.todayTasks);
+  setText("weekTasks", overview.weekTasks);
+  setText("monthTasks", overview.monthTasks);
+  setText("todayTime", formatDuration(overview.todayDuration));
+  setText("weekTime", formatDuration(overview.weekDuration));
+  setText("monthTime", formatDuration(overview.monthDuration));
+  setText("avgTime", formatDuration(overview.avgDuration));
+  setText("tasksPerHour", overview.taskRate > 0 ? overview.taskRate.toFixed(2) : "0");
+  setText("estimatedEarnings", formatMoney(overview.earnings));
+  setText("dailyTrend", `${overview.todayTasks} tasks today`);
+  setText("weeklyTrend", `${overview.weekTasks} tasks this week`);
+  setText("monthlyTrend", `${overview.monthTasks} tasks this month`);
+  setText("mostWorkedDataset", mostWorkedDataset);
+  setText("mostWorkedProject", mostWorkedProject);
+  setText("activeTask", activeLabel);
+  setText("weeklyHours", `${weeklyHours}h`);
+  setText("monthlyHours", `${monthlyHours}h`);
+  setText("longestSession", `${longestMinutes}m`);
+  setText("shortestSession", `${shortestMinutes}m`);
+  setText("totalSessions", `${sessions.length}`);
+  setText("productivityScore", `${score}%`);
+  setText("highlightDataset", mostWorkedDataset);
+  setText("highlightProject", mostWorkedProject);
+  setText("highlightActive", activeLabel);
+  setText("highlightSessions", `${sessions.length}`);
+  setText("timelineCount", `${records.slice(0, 8).length} events`);
 }
 
 function renderFilterOptions(sourceRecords) {
-  updateSelect(elements.datasetFilter, "All datasets", unique(sourceRecords.map((record) => record.dataset)));
-  updateSelect(elements.cameraFilter, "All cameras", unique(sourceRecords.map((record) => record.camera)));
+  updateSelect(elements.datasetFilter, "All datasets", unique(sourceRecords.map((record) => record.dataset).filter(Boolean)));
+  updateSelect(elements.cameraFilter, "All projects", unique(sourceRecords.map((record) => record.projectType).filter(Boolean)));
 }
 
 function updateSelect(select, defaultLabel, values) {
@@ -156,28 +298,21 @@ function updateSelect(select, defaultLabel, values) {
   select.value = values.includes(selected) ? selected : "";
 }
 
-function renderCharts(sourceRecords) {
+function renderCharts(sourceRecords, periods) {
   const daily = rollingBuckets(7, "day", sourceRecords);
   const weekly = rollingBuckets(6, "week", sourceRecords);
   const monthly = rollingBuckets(6, "month", sourceRecords);
-  const datasetTime = groupBy(sourceRecords, "dataset").slice(0, 8).map((item) => ({
-    label: shortLabel(item.label),
-    value: item.durationMs / 3600000
-  }));
-  const cameraTime = groupBy(sourceRecords, "camera").map((item) => ({
-    label: item.label,
-    value: item.durationMs / 3600000
-  }));
-
+  const datasetTime = Object.entries(groupBy(sourceRecords, "dataset")).slice(0, 8).map(([label, value]) => ({ label, value: value.durationMs / 3600000 }));
+  const projectTime = Object.entries(groupBy(sourceRecords, "projectType")).slice(0, 8).map(([label, value]) => ({ label, value: value.durationMs / 3600000 }));
   drawBarChart("dailyChart", daily);
   drawLineChart("weeklyChart", weekly);
   drawLineChart("monthlyChart", monthly);
   drawBarChart("datasetTimeChart", datasetTime);
-  drawBarChart("cameraTimeChart", cameraTime);
-
-  setText("dailyTrend", trendLabel(daily));
-  setText("weeklyTrend", trendLabel(weekly));
-  setText("monthlyTrend", trendLabel(monthly));
+  drawBarChart("cameraTimeChart", projectTime);
+  setText("weeklyReportTasks", periods.week.length);
+  setText("weeklyReportTime", formatDuration(sumDuration(periods.week)));
+  setText("monthlyReportTasks", periods.month.length);
+  setText("monthlyReportTime", formatDuration(sumDuration(periods.month)));
 }
 
 function rollingBuckets(count, unit, sourceRecords) {
@@ -198,34 +333,54 @@ function rollingBuckets(count, unit, sourceRecords) {
   return buckets;
 }
 
-function renderRankings(sourceRecords) {
-  const ranking = groupBy(sourceRecords, "dataset").slice(0, 5);
+function renderAnalytics(sourceRecords) {
+  const ranking = Object.entries(groupBy(sourceRecords, "dataset")).slice(0, 5);
   const list = document.querySelector("#datasetRanking");
   list.replaceChildren();
-  setText("topDataset", ranking[0] ? `${ranking[0].tasks} tasks` : "-");
-
-  for (const item of ranking) {
+  setText("topDataset", ranking[0] ? `${ranking[0][1].tasks} tasks` : "-");
+  for (const [label, item] of ranking) {
     const li = document.createElement("li");
     const title = document.createElement("strong");
     const meta = document.createElement("span");
-    title.textContent = item.label;
+    title.textContent = label;
     meta.textContent = `${item.tasks} tasks · ${formatDuration(item.durationMs)} · ${formatMoney(item.tasks * Number(settings.ratePerTask || 0))}`;
     li.append(title, meta);
     list.append(li);
   }
-}
-
-function renderReports(periods) {
-  setText("weeklyReportTasks", periods.week.length);
-  setText("weeklyReportTime", formatDuration(sumDuration(periods.week)));
-  setText("monthlyReportTasks", periods.month.length);
-  setText("monthlyReportTime", formatDuration(sumDuration(periods.month)));
+  setText("projectsCount", `${Object.keys(projects || {}).length}`);
 }
 
 function renderTables(sourceRecords) {
   renderActivityTable(sourceRecords);
   renderDatasetStats(sourceRecords);
-  renderCameraStats(sourceRecords);
+  renderProjectStats(sourceRecords);
+  renderTimeline(sourceRecords);
+}
+
+function renderTimeline(sourceRecords) {
+  const list = document.querySelector("#timelineList");
+  list.replaceChildren();
+  const events = sourceRecords.slice(0, 8).map((record) => ({
+    title: record.title || `${record.projectType || "Avala"} task`,
+    detail: `${record.projectType || "Unknown"} · ${record.dataset || "Untracked"} · ${formatDuration(record.durationMs)}`
+  }));
+
+  if (!events.length) {
+    const li = document.createElement("li");
+    li.textContent = "No Avala activity yet. Open a task to start the timeline.";
+    list.appendChild(li);
+    return;
+  }
+
+  for (const event of events) {
+    const li = document.createElement("li");
+    const strong = document.createElement("strong");
+    strong.textContent = event.title;
+    const small = document.createElement("small");
+    small.textContent = event.detail;
+    li.append(strong, small);
+    list.appendChild(li);
+  }
 }
 
 function renderActivityTable(sourceRecords) {
@@ -237,8 +392,8 @@ function renderActivityTable(sourceRecords) {
   for (const record of sourceRecords.slice(0, 100)) {
     const row = document.createElement("tr");
     row.append(
-      cell(record.dataset),
-      cell(record.camera),
+      cell(record.projectType || "Unknown Project"),
+      cell(record.dataset || "—"),
       cell(formatDateTime(record.startTime)),
       cell(formatDateTime(record.endTime)),
       cell(formatDuration(record.durationMs)),
@@ -249,23 +404,23 @@ function renderActivityTable(sourceRecords) {
 }
 
 function renderDatasetStats(sourceRecords) {
-  const grouped = groupBy(sourceRecords, "dataset");
+  const grouped = Object.entries(groupBy(sourceRecords, "dataset"));
   elements.datasetStatsBody.replaceChildren();
   setText("datasetCount", `${grouped.length} datasets`);
-  for (const item of grouped) {
+  for (const [label, item] of grouped) {
     const row = document.createElement("tr");
-    row.append(cell(item.label), cell(item.tasks), cell(formatDuration(item.durationMs)));
+    row.append(cell(label), cell(item.tasks), cell(formatDuration(item.durationMs)));
     elements.datasetStatsBody.append(row);
   }
 }
 
-function renderCameraStats(sourceRecords) {
-  const grouped = groupBy(sourceRecords, "camera");
+function renderProjectStats(sourceRecords) {
+  const grouped = Object.entries(groupBy(sourceRecords, "projectType"));
   elements.cameraStatsBody.replaceChildren();
-  setText("cameraCount", `${grouped.length} cameras`);
-  for (const item of grouped) {
+  setText("cameraCount", `${grouped.length} projects`);
+  for (const [label, item] of grouped) {
     const row = document.createElement("tr");
-    row.append(cell(item.label), cell(item.tasks));
+    row.append(cell(label), cell(item.tasks));
     elements.cameraStatsBody.append(row);
   }
 }
@@ -350,92 +505,174 @@ function drawGrid(context, padding, width, height) {
 }
 
 function drawLabel(context, text, x, y) {
-  context.fillStyle = chartColors().muted;
-  context.font = "11px system-ui";
+  context.fillStyle = getComputedStyle(document.body).getPropertyValue("--muted") || "#607080";
+  context.font = "12px Inter, sans-serif";
   context.textAlign = "center";
   context.fillText(text, x, y);
 }
 
 function chartColors() {
-  const styles = getComputedStyle(document.body);
+  const computed = getComputedStyle(document.body);
   return {
-    accent: styles.getPropertyValue("--accent").trim(),
-    accent2: styles.getPropertyValue("--accent-2").trim(),
-    accent3: styles.getPropertyValue("--accent-3").trim(),
-    muted: styles.getPropertyValue("--muted").trim(),
-    grid: styles.getPropertyValue("--chart-grid").trim()
+    accent: computed.getPropertyValue("--accent").trim() || "#0f766e",
+    accent2: computed.getPropertyValue("--accent-2").trim() || "#2563eb",
+    accent3: computed.getPropertyValue("--accent-3").trim() || "#d97706",
+    grid: computed.getPropertyValue("--chart-grid").trim() || "#e4ebf1"
   };
 }
 
-function groupBy(sourceRecords, key) {
-  const map = new Map();
-  for (const record of sourceRecords) {
-    const label = record[key] || "Unknown";
-    const current = map.get(label) || { label, tasks: 0, durationMs: 0 };
-    current.tasks += 1;
-    current.durationMs += record.durationMs || 0;
-    map.set(label, current);
+function toggleTheme() {
+  document.body.classList.toggle("dark");
+  settings.darkMode = document.body.classList.contains("dark");
+  chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+  showToast(settings.darkMode ? "Dark mode enabled" : "Light mode enabled");
+}
+
+async function saveSettingsFromInputs() {
+  settings.ratePerTask = Number(elements.rateInput.value || 0);
+  settings.dailyGoal = Number(elements.goalInput.value || 20);
+  await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+  render();
+}
+
+function applySettingsToControls() {
+  elements.rateInput.value = settings.ratePerTask || 0;
+  elements.goalInput.value = settings.dailyGoal || 20;
+  document.body.classList.toggle("dark", Boolean(settings.darkMode));
+  elements.themeButton.textContent = settings.darkMode ? "Light Mode" : "Dark Mode";
+}
+
+async function exportDashboardData() {
+  const payload = {
+    records,
+    tasks,
+    sessions,
+    datasets,
+    projects,
+    settings,
+    exportedAt: new Date().toISOString()
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `avala-dashboard-${new Date().toISOString().slice(0, 10)}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+  showToast("Dashboard export created.");
+}
+
+async function clearRecords() {
+  await chrome.storage.local.set({ [STORAGE_KEY]: [], [TASKS_KEY]: [], [SESSIONS_KEY]: [], [DATASETS_KEY]: {}, [PROJECTS_KEY]: {}, [SETTINGS_KEY]: DEFAULT_SETTINGS, [ACTIVE_TASK_KEY]: "", [ACTIVE_SESSION_KEY]: "" });
+  records = [];
+  tasks = [];
+  sessions = [];
+  datasets = {};
+  projects = {};
+  settings = { ...DEFAULT_SETTINGS };
+  render();
+  showToast("Tracker state cleared.");
+}
+
+function checkGoalNotification(taskCount) {
+  if (!settings.dailyGoal || settings.dailyGoal <= 0) return;
+  const date = new Date().toISOString().slice(0, 10);
+  if (settings.notifiedGoalDate === date && taskCount < settings.dailyGoal) return;
+  if (taskCount >= settings.dailyGoal) {
+    showToast(`Goal reached: ${settings.dailyGoal} tasks today.`);
+    settings.notifiedGoalDate = date;
+    chrome.storage.local.set({ [SETTINGS_KEY]: settings });
   }
-  return [...map.values()].sort((a, b) => b.tasks - a.tasks || b.durationMs - a.durationMs);
 }
 
-function sumDuration(sourceRecords) {
-  return sourceRecords.reduce((sum, record) => sum + (record.durationMs || 0), 0);
-}
-
-function unique(values) {
-  return [...new Set(values.filter(Boolean))].sort();
-}
-
-function cell(text) {
-  const element = document.createElement("td");
-  element.textContent = text || "-";
-  return element;
-}
-
-function linkCell(url) {
-  const element = document.createElement("td");
-  const link = document.createElement("a");
-  link.href = url;
-  link.target = "_blank";
-  link.rel = "noreferrer";
-  link.textContent = "Open";
-  element.append(link);
-  return element;
+function showToast(message) {
+  elements.toast.textContent = message;
+  elements.toast.classList.add("show");
+  clearTimeout(showToast.timeout);
+  showToast.timeout = setTimeout(() => elements.toast.classList.remove("show"), 2200);
 }
 
 function setText(id, value) {
-  document.querySelector(`#${id}`).textContent = String(value);
+  const element = document.querySelector(`#${id}`);
+  if (element) element.textContent = value;
 }
 
-function formatDateTime(value) {
-  if (!value) return "-";
-  return new Date(value).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit"
-  });
-}
-
-function formatDuration(ms) {
-  const totalSeconds = Math.max(0, Math.round((ms || 0) / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours) return `${hours}h ${minutes}m`;
-  if (minutes) return `${minutes}m ${seconds}s`;
-  return `${seconds}s`;
+function formatDuration(durationMs) {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return "0m";
+  const totalMinutes = Math.round(durationMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h`;
+  return `${minutes}m`;
 }
 
 function formatMoney(value) {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2
-  }).format(value || 0);
+  return `$${Number(value || 0).toFixed(2)}`;
 }
+
+function formatDateTime(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString() : "—";
+}
+
+function sumDuration(recordsList) {
+  return recordsList.reduce((total, record) => total + Number(record.durationMs || 0), 0);
+}
+
+function unique(values) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function groupBy(sourceRecords, field) {
+  return sourceRecords.reduce((acc, record) => {
+    const key = record[field] || "Unknown";
+    if (!acc[key]) {
+      acc[key] = { label: key, tasks: 0, durationMs: 0 };
+    }
+    acc[key].tasks += 1;
+    acc[key].durationMs += Number(record.durationMs || 0);
+    return acc;
+  }, {});
+}
+
+function startOfDay(date) {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  return result;
+}
+
+function startOfWeek(date) {
+  const result = new Date(date);
+  const day = result.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  result.setDate(result.getDate() + diff);
+  result.setHours(0, 0, 0, 0);
+  return result;
+}
+
+function shiftDate(date, unit, count) {
+  const result = new Date(date);
+  if (unit === "day") result.setDate(result.getDate() + count);
+  else if (unit === "week") result.setDate(result.getDate() + count * 7);
+  else if (unit === "month") result.setMonth(result.getMonth() + count);
+  return result;
+}
+
+function formatBucketLabel(date, unit) {
+  if (unit === "day") return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  if (unit === "week") return `W${date.getWeek()}`;
+  return date.toLocaleDateString([], { month: "short" });
+}
+
+Date.prototype.getWeek = function getWeek() {
+  const date = new Date(this.getTime());
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+};
 
 function calculateDurationMs(startTime, endTime) {
   const start = new Date(startTime).getTime();
@@ -444,60 +681,25 @@ function calculateDurationMs(startTime, endTime) {
   return end - start;
 }
 
-function startOfDay(date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+function cell(value) {
+  const td = document.createElement("td");
+  td.textContent = value ?? "—";
+  return td;
 }
 
-function startOfWeek(date) {
-  const day = date.getDay();
-  const diff = day === 0 ? 6 : day - 1;
-  const start = startOfDay(date);
-  start.setDate(start.getDate() - diff);
-  return start;
-}
-
-function shiftDate(date, unit, amount) {
-  const shifted = new Date(date);
-  if (unit === "day") shifted.setDate(shifted.getDate() + amount);
-  if (unit === "week") shifted.setDate(shifted.getDate() + amount * 7);
-  if (unit === "month") shifted.setMonth(shifted.getMonth() + amount);
-  return shifted;
-}
-
-function formatBucketLabel(date, unit) {
-  if (unit === "day") return date.toLocaleDateString([], { weekday: "short" });
-  if (unit === "week") return `${date.getMonth() + 1}/${date.getDate()}`;
-  return date.toLocaleDateString([], { month: "short" });
-}
-
-function shortLabel(value) {
-  if (!value || value.length <= 12) return value || "-";
-  return `${value.slice(0, 10)}...`;
-}
-
-function trendLabel(data) {
-  if (data.length < 2) return "-";
-  const previous = data[data.length - 2].value;
-  const current = data[data.length - 1].value;
-  const diff = current - previous;
-  if (diff > 0) return `+${diff}`;
-  if (diff < 0) return String(diff);
-  return "steady";
-}
-
-async function saveSettingsFromInputs() {
-  settings = {
-    ...settings,
-    ratePerTask: Number(elements.rateInput.value || 0),
-    dailyGoal: Number(elements.goalInput.value || DEFAULT_SETTINGS.dailyGoal)
-  };
-  await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
-  render();
-}
-
-async function toggleTheme() {
-  settings = { ...settings, darkMode: !settings.darkMode };
-  await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+function linkCell(url) {
+  const td = document.createElement("td");
+  if (!url) {
+    td.textContent = "—";
+    return td;
+  }
+  const link = document.createElement("a");
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  link.textContent = "Open";
+  td.appendChild(link);
+  return td;
 }
 
 function applySettingsToControls() {

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Manage Avala Projects</title>
+    <style>
+      body { font-family: Inter, system-ui, sans-serif; padding: 12px; color:#17201b }
+      h1 { font-size: 18px }
+      .list { max-height: 60vh; overflow:auto; margin-top:8px }
+      .item { border:1px solid #e6efe9; padding:8px; border-radius:6px; margin-bottom:6px }
+      .controls { margin-top:12px; display:flex; gap:8px }
+      button { padding:8px 10px }
+    </style>
+  </head>
+  <body>
+    <h1>Manage Avala Projects</h1>
+    <p>Select projects to merge or delete. Merged projects combine sequences.</p>
+    <div class="list" id="projectList">Loading…</div>
+    <div class="controls">
+      <button id="mergeBtn">Merge Selected</button>
+      <button id="deleteBtn">Delete Selected</button>
+      <button id="refreshBtn">Refresh</button>
+    </div>
+    <script src="manage.js"></script>
+  </body>
+</html>
