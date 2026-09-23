@@ -1,5 +1,5 @@
 (function attachParser(root) {
-  function parseAvalaUrl(rawUrl, now) {
+  function parseAvalaUrl(rawUrl, now, metadata) {
     if (!rawUrl || typeof rawUrl !== "string") return null;
 
     let url;
@@ -18,10 +18,11 @@
     const datasetMatch = pathname.match(/\/datasets\/([^/?#]+)/);
     const sequenceMatch = pathname.match(/\/sequences\/([^/?#]+)/);
     const burroMatch = pathname.match(/\/@burro\/slices\/([^/?#]+)\/items\/([^/?#]+)/);
+    const workUnitPathMatch = pathname.match(/^\/wu\/([^/?#]+)/);
 
-    const workUnitUid = params.get("work_unit_uid") || params.get("workUnitUid") || "";
+    const workUnitUid = workUnitPathMatch ? decodeURIComponent(workUnitPathMatch[1]) : params.get("work_unit_uid") || params.get("workUnitUid") || "";
     const sequenceId = sequenceMatch ? decodeURIComponent(sequenceMatch[1]) : params.get("sequence_id") || params.get("sequenceId") || "";
-    const dataset = datasetMatch ? decodeURIComponent(datasetMatch[1]) : "";
+    const dataset = datasetMatch ? decodeURIComponent(datasetMatch[1]) : normaliseDataset(metadata?.dataset || datasetFromTitle(metadata?.title));
 
     if (burroMatch) {
       const slice = decodeURIComponent(burroMatch[1]);
@@ -87,6 +88,18 @@
 
   function buildRecordId(dataset, sequenceId, camera) {
     return [dataset, sequenceId, camera].filter(Boolean).join("|");
+  }
+
+  function datasetFromTitle(title) {
+    // Avala's Flutter canvas does not expose its top bar in the DOM, but it
+    // mirrors the active batch in titles such as "8d8e64 · v1-batch-000ry-sf-bev".
+    const text = String(title || "");
+    const batchMatch = text.match(/(?:^|[·|])\s*([^·|]*\bbatch-[a-z0-9][a-z0-9-]*)\s*$/i);
+    return batchMatch ? batchMatch[1].trim() : "";
+  }
+
+  function normaliseDataset(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
   }
 
   function safeDecode(value) {

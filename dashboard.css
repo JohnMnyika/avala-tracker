@@ -404,3 +404,23 @@ a {
     grid-column: auto;
   }
 }
+
+.pasteImport {
+  display: grid;
+  align-items: stretch;
+  margin-top: 10px;
+}
+
+textarea {
+  min-height: 88px;
+  margin-top: 7px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  resize: vertical;
+  background: var(--panel-soft);
+  color: var(--text);
+  font: inherit;
+}
+
+#importPasteButton { margin-top: 10px; }

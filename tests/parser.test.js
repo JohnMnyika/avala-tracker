@@ -20,3 +20,16 @@ test('parses burro segmentation slice items from Avala URLs', () => {
   assert.equal(parsed.slice, '20260402t103311-0400-label');
   assert.equal(parsed.itemId, '76f27c64-cf81-4781-a19a-7b013df28e2e');
 });
+
+test('parses copied work-unit links and uses the batch name from the Avala title', () => {
+  const parsed = parser.parseAvalaUrl(
+    'https://avala.ai/wu/1f33250a-cb88-459f-96cb-c77d544a3485',
+    undefined,
+    { title: '8d8e64 · v1-batch-000ry-sf-bev' }
+  );
+
+  assert.ok(parsed);
+  assert.equal(parsed.workUnitUid, '1f33250a-cb88-459f-96cb-c77d544a3485');
+  assert.equal(parsed.dataset, 'v1-batch-000ry-sf-bev');
+  assert.equal(parsed.id, '1f33250a-cb88-459f-96cb-c77d544a3485');
+});

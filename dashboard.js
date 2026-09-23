@@ -29,7 +29,15 @@ const elements = {
   refreshButton: document.querySelector("#refreshButton"),
   exportButton: document.querySelector("#exportButton"),
   clearButton: document.querySelector("#clearButton"),
-  toast: document.querySelector("#toast")
+  toast: document.querySelector("#toast"),
+  annotatorInput: document.querySelector("#annotatorInput"),
+  spreadsheetUrlInput: document.querySelector("#spreadsheetUrlInput"),
+  spreadsheetEndpointInput: document.querySelector("#spreadsheetEndpointInput"),
+  assignmentIdInput: document.querySelector("#assignmentIdInput"),
+  syncButton: document.querySelector("#syncButton"),
+  syncStatus: document.querySelector("#syncStatus"),
+  sheetPasteInput: document.querySelector("#sheetPasteInput"),
+  importPasteButton: document.querySelector("#importPasteButton")
 };
 
 elements.projectsCount = document.querySelector("#projectsCount");
@@ -56,6 +64,9 @@ let projects = {};
 let settings = { ...DEFAULT_SETTINGS };
 let activeTaskId = "";
 let activeSessionId = "";
+let assignments = {};
+let workLog = [];
+let sync = {};
 
 const STORAGE_KEYS = { records: STORAGE_KEY, tasks: TASKS_KEY, sessions: SESSIONS_KEY, datasets: DATASETS_KEY, projects: PROJECTS_KEY, settings: SETTINGS_KEY, activeTask: ACTIVE_TASK_KEY, activeSession: ACTIVE_SESSION_KEY };
 
@@ -74,6 +85,12 @@ elements.themeButton.addEventListener("click", toggleTheme);
 elements.rateInput.addEventListener("input", saveSettingsFromInputs);
 elements.goalInput.addEventListener("input", saveSettingsFromInputs);
 elements.addBurroBtn?.addEventListener("click", addBurroProject);
+elements.syncButton?.addEventListener("click", syncSpreadsheet);
+elements.importPasteButton?.addEventListener("click", importPastedAssignments);
+elements.annotatorInput?.addEventListener("change", saveSpreadsheetSettings);
+elements.spreadsheetUrlInput?.addEventListener("change", saveSpreadsheetSettings);
+elements.spreadsheetEndpointInput?.addEventListener("change", saveSpreadsheetSettings);
+elements.assignmentIdInput?.addEventListener("change", saveSpreadsheetSettings);
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") return;
@@ -85,6 +102,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (changes[DATASETS_KEY]) datasets = changes[DATASETS_KEY].newValue || {};
   if (changes[PROJECTS_KEY]) projects = changes[PROJECTS_KEY].newValue || {};
   if (changes[SETTINGS_KEY]) settings = { ...DEFAULT_SETTINGS, ...(changes[SETTINGS_KEY].newValue || {}) };
+  if (changes.avalaSpreadsheetAssignments) assignments = changes.avalaSpreadsheetAssignments.newValue || {};
+  if (changes.avalaWorkLog) workLog = changes.avalaWorkLog.newValue || [];
+  if (changes.avalaSpreadsheetSync) sync = changes.avalaSpreadsheetSync.newValue || {};
   applySettingsToControls();
   render();
 });
@@ -112,6 +132,9 @@ async function loadState() {
   datasets = result[DATASETS_KEY] || {};
   projects = result[PROJECTS_KEY] || {};
   settings = { ...DEFAULT_SETTINGS, ...(result[SETTINGS_KEY] || {}) };
+  assignments = result.avalaSpreadsheetAssignments || {};
+  workLog = result.avalaWorkLog || [];
+  sync = result.avalaSpreadsheetSync || {};
   renderProjects(projects);
   applySettingsToControls();
   render();
@@ -190,6 +213,7 @@ function render() {
   renderCharts(filtered, periods);
   renderAnalytics(filtered, periods);
   renderTables(filtered);
+  renderSpreadsheetWorkflow();
   renderProjects(projects);
   checkGoalNotification(periods.today.length);
 }
@@ -707,6 +731,10 @@ function applySettingsToControls() {
   elements.themeButton.textContent = settings.darkMode ? "Light Mode" : "Dark Mode";
   elements.rateInput.value = settings.ratePerTask;
   elements.goalInput.value = settings.dailyGoal;
+  if (elements.annotatorInput) elements.annotatorInput.value = settings.annotatorName || "John Mnyika";
+  if (elements.spreadsheetUrlInput) elements.spreadsheetUrlInput.value = settings.spreadsheetUrl || "";
+  if (elements.spreadsheetEndpointInput) elements.spreadsheetEndpointInput.value = settings.spreadsheetEndpoint || "";
+  if (elements.assignmentIdInput) elements.assignmentIdInput.value = settings.assignmentId || "";
 }
 
 async function checkGoalNotification(todayTasks) {
@@ -767,4 +795,54 @@ function escapeCsv(value) {
 async function clearRecords() {
   if (!confirm("Clear all tracked Avala work records?")) return;
   await chrome.runtime.sendMessage({ type: "CLEAR_RECORDS" });
+}
+
+function renderSpreadsheetWorkflow() {
+  const mine = Object.values(assignments).filter((assignment) => String(assignment.annotator || "").trim().toLowerCase() === String(settings.annotatorName || "John Mnyika").trim().toLowerCase());
+  const completed = mine.filter((assignment) => assignment.status === "Complete");
+  const inProgress = mine.filter((assignment) => assignment.status === "In Progress");
+  const today = new Date().toISOString().slice(0, 10);
+  const completedToday = workLog.filter((entry) => String(entry.annotator || "").trim().toLowerCase() === String(settings.annotatorName || "John Mnyika").trim().toLowerCase() && String(entry.completed_at || "").slice(0, 10) === today);
+  const activeMs = completedToday.reduce((sum, entry) => sum + Number(entry.active_time || 0), 0);
+  setText("myAssigned", mine.length);
+  setText("myInProgress", inProgress.length);
+  setText("myCompleted", completed.length);
+  setText("myRemaining", mine.length - completed.length);
+  setText("myActiveTime", formatDuration(activeMs));
+  setText("myFramesPerHour", activeMs ? (completedToday.length / (activeMs / 3600000)).toFixed(2) : "0");
+  if (elements.syncStatus) elements.syncStatus.textContent = sync.lastError ? `Sync error: ${sync.lastError}` : sync.lastSuccessAt ? `Synced ${formatDateTime(sync.lastSuccessAt)}` : "Not synced";
+}
+
+async function saveSpreadsheetSettings() {
+  settings = { ...settings, annotatorName: elements.annotatorInput.value.trim() || "John Mnyika", spreadsheetUrl: elements.spreadsheetUrlInput.value.trim(), spreadsheetEndpoint: elements.spreadsheetEndpointInput.value.trim(), assignmentId: elements.assignmentIdInput.value.trim() };
+  await chrome.runtime.sendMessage({ type: "SAVE_SETTINGS", settings });
+}
+
+async function syncSpreadsheet() {
+  await saveSpreadsheetSettings();
+  elements.syncStatus.textContent = "Syncing…";
+  const result = await chrome.runtime.sendMessage({ type: "SYNC_SPREADSHEET" });
+  if (!result?.ok) showToast(result?.state?.sync?.lastError || result?.error || "Spreadsheet sync failed.");
+  await loadState();
+}
+
+function parsePastedSheetRows(text) {
+  const lines = String(text || "").trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines.shift().split("\t").map((header) => header.trim());
+  return lines.map((line) => {
+    const cells = line.split("\t");
+    return headers.reduce((row, header, index) => { row[header] = (cells[index] || "").trim(); return row; }, {});
+  });
+}
+
+async function importPastedAssignments() {
+  const rows = parsePastedSheetRows(elements.sheetPasteInput?.value);
+  if (!rows.length) { showToast("Copy the header and at least one assignment row from Google Sheets first."); return; }
+  await saveSpreadsheetSettings();
+  const result = await chrome.runtime.sendMessage({ type: "SYNC_SPREADSHEET", rows });
+  if (!result?.ok) { showToast(result?.state?.sync?.lastError || "Import failed."); return; }
+  elements.sheetPasteInput.value = "";
+  showToast(`${rows.length} spreadsheet rows imported.`);
+  await loadState();
 }

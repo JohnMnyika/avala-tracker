@@ -1,4 +1,4 @@
-importScripts("avalaParser.js");
+importScripts("avalaParser.js", "workflow.js");
 
 const STORAGE_KEY = "avalaWorkRecords";
 const TASKS_KEY = "avalaTasks";
@@ -8,6 +8,9 @@ const PROJECTS_KEY = "avalaProjects";
 const SETTINGS_KEY = "avalaSettings";
 const ACTIVE_SESSION_KEY = "avalaActiveSession";
 const ACTIVE_TASK_KEY = "avalaActiveTaskId";
+const ASSIGNMENTS_KEY = "avalaSpreadsheetAssignments";
+const WORK_LOG_KEY = "avalaWorkLog";
+const SYNC_KEY = "avalaSpreadsheetSync";
 const recentTracks = new Map();
 const DUPLICATE_WINDOW_MS = 15000;
 const DEFAULT_SETTINGS = {
@@ -19,8 +22,21 @@ const DEFAULT_SETTINGS = {
   targetDatasets: 5,
   defaultExportFormat: "json",
   idleThresholdMinutes: 5,
-  timezone: "UTC"
+  timezone: "UTC",
+  annotatorName: "John Mnyika",
+  spreadsheetUrl: "https://docs.google.com/spreadsheets/d/1EWcaWCMsfuyXaJNTmwarLlm8o3eaU0mTsGjhgZoDNEo/edit?gid=599816333#gid=599816333",
+  spreadsheetEndpoint: "",
+  spreadsheetId: "",
+  sheetName: "",
+  assignmentId: "",
+  syncIntervalMinutes: 5
 };
+
+function requestCanonicalViewUrl(tabId) {
+  chrome.tabs.sendMessage(tabId, { type: "AVALA_ROUTE_CHANGED" }).catch(() => {
+    // The content script may still be loading or the tab may have navigated away.
+  });
+}
 
 function createDefaultProject() {
   return {
@@ -41,7 +57,10 @@ async function ensureDefaults() {
       [TASKS_KEY]: [],
       [SESSIONS_KEY]: [],
       [DATASETS_KEY]: {},
-      [STORAGE_KEY]: []
+      [STORAGE_KEY]: [],
+      [ASSIGNMENTS_KEY]: {},
+      [WORK_LOG_KEY]: [],
+      [SYNC_KEY]: {}
     });
     const projects = result[PROJECTS_KEY] || {};
     const settings = { ...DEFAULT_SETTINGS, ...(result[SETTINGS_KEY] || {}) };
@@ -54,7 +73,10 @@ async function ensureDefaults() {
       [TASKS_KEY]: result[TASKS_KEY] || [],
       [SESSIONS_KEY]: result[SESSIONS_KEY] || [],
       [DATASETS_KEY]: result[DATASETS_KEY] || {},
-      [STORAGE_KEY]: result[STORAGE_KEY] || []
+      [STORAGE_KEY]: result[STORAGE_KEY] || [],
+      [ASSIGNMENTS_KEY]: result[ASSIGNMENTS_KEY] || {},
+      [WORK_LOG_KEY]: result[WORK_LOG_KEY] || [],
+      [SYNC_KEY]: result[SYNC_KEY] || {}
     });
   } catch (error) {
     console.warn("Default state init failed", error);
@@ -65,11 +87,21 @@ chrome.runtime.onInstalled && chrome.runtime.onInstalled.addListener(() => {
   ensureDefaults();
 });
 
-ensureDefaults();
+ensureDefaults().then(() => {
+  chrome.alarms?.create("avala-spreadsheet-sync", { periodInMinutes: 5 });
+});
+
+chrome.alarms?.onAlarm.addListener((alarm) => {
+  if (alarm.name !== "avala-spreadsheet-sync") return;
+  loadState().then((state) => {
+    if (state.settings.spreadsheetUrl || state.settings.spreadsheetEndpoint) return syncSpreadsheet();
+    return null;
+  }).catch((error) => console.warn("Spreadsheet retry failed", error));
+});
 
 chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete" && tab?.url) {
-    trackUrl(tab.url, tab.id, tab.title).catch((error) => console.warn("Tab track failed", error));
+  if (changeInfo.status === "complete" && tab?.id) {
+    requestCanonicalViewUrl(tab.id);
   }
 });
 
@@ -90,12 +122,20 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 });
 
 chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
-  trackUrl(details.url, details.tabId).catch((error) => console.warn("History track failed", error));
+  requestCanonicalViewUrl(details.tabId);
 }, { url: [{ hostEquals: "avala.ai" }] });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type === "TRACK_CURRENT_URL" && message.url) {
-    trackUrl(message.url, message.tabId).then((record) => sendResponse({ ok: true, record }));
+  if (message?.type === "CANONICAL_VIEW_URL" && message.url) {
+    trackUrl(message.url, _sender?.tab?.id, message.title, { dataset: message.dataset, title: message.title })
+      .then(async (record) => {
+        if (record) await persistProjectMetadata(record, message.title || record.title || "Avala Task");
+        sendResponse({ ok: Boolean(record), record });
+      })
+      .catch((error) => {
+        console.warn("Canonical view track failed", error);
+        sendResponse({ ok: false, record: null });
+      });
     return true;
   }
 
@@ -106,6 +146,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "SAVE_SETTINGS" && message.settings) {
     saveSettings(message.settings).then((state) => sendResponse({ ok: true, state }));
+    return true;
+  }
+
+  if (message?.type === "SYNC_SPREADSHEET") {
+    syncSpreadsheet(message.rows).then((state) => sendResponse({ ok: !state.sync.lastError, state }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message?.type === "ACTIVITY_PING") {
+    recordSpreadsheetActivity(new Date().toISOString()).then(() => sendResponse({ ok: true }));
     return true;
   }
 
@@ -132,14 +183,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "ADD_NOTE" && message.taskId && message.note !== undefined) {
     addTaskNote(message.taskId, message.note).then((state) => sendResponse({ ok: true, state }));
     return true;
-  }
-
-  if (message?.type === "PAGE_METADATA" && message.url) {
-    const parsed = AvalaParser.parseAvalaUrl(message.url);
-    if (parsed) {
-      persistProjectMetadata(parsed, message.title || parsed.title || "Avala Task");
-    }
-    return false;
   }
 
   if (message?.type === "MERGE_PROJECTS" && Array.isArray(message.keys) && message.keys.length > 1) {
@@ -169,7 +212,10 @@ async function loadState() {
     [PROJECTS_KEY]: {},
     [SETTINGS_KEY]: DEFAULT_SETTINGS,
     [ACTIVE_SESSION_KEY]: "",
-    [ACTIVE_TASK_KEY]: ""
+    [ACTIVE_TASK_KEY]: "",
+    [ASSIGNMENTS_KEY]: {},
+    [WORK_LOG_KEY]: [],
+    [SYNC_KEY]: {}
   });
 
   const tasks = Array.isArray(result[TASKS_KEY]) ? result[TASKS_KEY] : [];
@@ -180,8 +226,11 @@ async function loadState() {
   const settings = { ...DEFAULT_SETTINGS, ...(result[SETTINGS_KEY] || {}) };
   const activeSessionId = result[ACTIVE_SESSION_KEY] || "";
   const activeTaskId = result[ACTIVE_TASK_KEY] || "";
+  const assignments = result[ASSIGNMENTS_KEY] || {};
+  const workLog = Array.isArray(result[WORK_LOG_KEY]) ? result[WORK_LOG_KEY] : [];
+  const sync = result[SYNC_KEY] || {};
 
-  return { records, tasks, sessions, datasets, projects, settings, activeSessionId, activeTaskId };
+  return { records, tasks, sessions, datasets, projects, settings, activeSessionId, activeTaskId, assignments, workLog, sync };
 }
 
 async function persistState(state) {
@@ -193,14 +242,127 @@ async function persistState(state) {
     [PROJECTS_KEY]: state.projects || {},
     [SETTINGS_KEY]: state.settings || DEFAULT_SETTINGS,
     [ACTIVE_SESSION_KEY]: state.activeSessionId || "",
-    [ACTIVE_TASK_KEY]: state.activeTaskId || ""
+    [ACTIVE_TASK_KEY]: state.activeTaskId || "",
+    [ASSIGNMENTS_KEY]: state.assignments || {},
+    [WORK_LOG_KEY]: state.workLog || [],
+    [SYNC_KEY]: state.sync || {}
   };
   await chrome.storage.local.set(payload);
   return state;
 }
 
-async function trackUrl(url, tabId, title) {
-  const parsed = AvalaParser.parseAvalaUrl(url);
+
+
+function buildGoogleSheetCsvUrl(rawUrl) {
+  const url = new URL(rawUrl);
+  if (url.hostname !== "docs.google.com") throw new Error("Use a Google Sheets link from docs.google.com.");
+  const match = url.pathname.match(/\/spreadsheets\/d\/([^/]+)/);
+  if (!match) throw new Error("The Google Sheet link does not include a spreadsheet ID.");
+  const gid = url.searchParams.get("gid") || (url.hash.match(/gid=(\d+)/) || [])[1] || "0";
+  return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(match[1])}/export?format=csv&gid=${encodeURIComponent(gid)}`;
+}
+
+function csvToRows(text) {
+  const cells = [];
+  let row = [];
+  let value = "";
+  let quoted = false;
+  for (let index = 0; index < String(text || "").length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === '"' && quoted && next === '"') { value += '"'; index += 1; }
+    else if (char === '"') quoted = !quoted;
+    else if (char === ',' && !quoted) { row.push(value); value = ""; }
+    else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(value); cells.push(row); row = []; value = "";
+    } else value += char;
+  }
+  if (value || row.length) { row.push(value); cells.push(row); }
+  const headers = (cells.shift() || []).map((header) => header.trim());
+  return cells.filter((values) => values.some((entry) => entry.trim())).map((values) => headers.reduce((entry, header, index) => {
+    entry[header] = (values[index] || "").trim();
+    return entry;
+  }, {}));
+}
+
+async function syncSpreadsheet(providedRows) {
+  const state = await loadState();
+  const now = new Date().toISOString();
+  let rows = providedRows;
+  try {
+    if (!Array.isArray(rows)) {
+      const spreadsheetUrl = String(state.settings.spreadsheetUrl || "").trim();
+      const endpoint = String(state.settings.spreadsheetEndpoint || "").trim();
+      let directError = "";
+      if (spreadsheetUrl) {
+        try {
+          const response = await fetch(buildGoogleSheetCsvUrl(spreadsheetUrl), { cache: "no-store", credentials: "include" });
+          if (!response.ok) throw new Error(`Google Sheets returned ${response.status}`);
+          rows = csvToRows(await response.text());
+        } catch (error) {
+          directError = error.message || "Google Sheets blocked the request";
+        }
+      }
+      if (!Array.isArray(rows)) {
+        if (!endpoint) {
+          throw new Error(`Google blocked direct spreadsheet access (${directError}). Use the secure Apps Script endpoint for automatic sync, or use Quick import.`);
+        }
+        const response = await fetch(endpoint, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Apps Script sync failed (${response.status}).`);
+        const payload = await response.json();
+        rows = Array.isArray(payload) ? payload : (payload.assignments || payload.rows || []);
+      }
+    }
+    if (!Array.isArray(rows)) throw new Error("The spreadsheet endpoint must return an assignments array.");
+    const previous = state.assignments || {};
+    const next = {};
+    for (const row of rows) {
+      const assignment = SpreadsheetWorkflow.rowToAssignment(row, { assignmentId: state.settings.assignmentId });
+      const old = previous[assignment.taskId];
+      next[assignment.taskId] = { ...old, ...assignment, firstSeenAt: old?.firstSeenAt || now, updatedAt: now, sourceUpdatedAt: assignment.sourceUpdatedAt || old?.sourceUpdatedAt || "" };
+      if (!SpreadsheetWorkflow.isMine(assignment, state.settings.annotatorName)) continue;
+      const active = state.sessions.find((session) => session.id === state.activeSessionId && session.status === "active");
+      if (assignment.status === SpreadsheetWorkflow.STATUS_IN_PROGRESS && (!old || old.status !== SpreadsheetWorkflow.STATUS_IN_PROGRESS || !active)) {
+        if (active && active.taskId !== assignment.taskId) SpreadsheetWorkflow.closeSession(active, now, state.settings.idleThresholdMinutes);
+        if (!active || active.taskId !== assignment.taskId) {
+          const session = SpreadsheetWorkflow.newSession(assignment, now);
+          state.sessions.unshift(session);
+          state.activeSessionId = session.id;
+          state.activeTaskId = assignment.taskId;
+        }
+      }
+      if (assignment.status === SpreadsheetWorkflow.STATUS_COMPLETE && old?.status !== SpreadsheetWorkflow.STATUS_COMPLETE) {
+        const session = state.sessions.find((entry) => entry.taskId === assignment.taskId && entry.status === "active");
+        const completedSession = session || SpreadsheetWorkflow.newSession(assignment, now);
+        SpreadsheetWorkflow.closeSession(completedSession, now, state.settings.idleThresholdMinutes);
+        if (!session) state.sessions.unshift(completedSession);
+        if (state.activeSessionId === completedSession.id) { state.activeSessionId = ""; state.activeTaskId = ""; }
+        const log = SpreadsheetWorkflow.completedLog(completedSession, assignment, now);
+        const index = state.workLog.findIndex((entry) => entry.task_id === assignment.taskId);
+        if (index >= 0) state.workLog[index] = { ...state.workLog[index], ...log, created_at: state.workLog[index].created_at || log.created_at };
+        else state.workLog.unshift(log);
+      }
+    }
+    state.assignments = next;
+    state.sync = { lastSuccessAt: now, lastError: "", lastAttemptAt: now, assignmentCount: Object.keys(next).length };
+  } catch (error) {
+    state.sync = { ...(state.sync || {}), lastAttemptAt: now, lastError: error.message || "Spreadsheet sync failed." };
+  }
+  await persistState(state);
+  return state;
+}
+
+async function recordSpreadsheetActivity(now) {
+  const state = await loadState();
+  const session = state.sessions.find((entry) => entry.id === state.activeSessionId && entry.type === "spreadsheet" && entry.status === "active");
+  if (session) SpreadsheetWorkflow.accrue(session, now, state.settings.idleThresholdMinutes);
+  await persistState(state);
+  return state;
+}
+
+async function trackUrl(url, tabId, title, metadata) {
+  const parsed = AvalaParser.parseAvalaUrl(url, undefined, metadata);
   if (!parsed) return null;
 
   const trackedAt = Date.now();

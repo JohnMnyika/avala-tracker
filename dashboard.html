@@ -21,6 +21,22 @@
         </div>
       </header>
 
+      <section class="panel spreadsheetPanel" aria-label="Spreadsheet connection">
+        <div class="sectionHead"><h2>Spreadsheet workflow</h2><span id="syncStatus">Not synced</span></div>
+        <div class="controls">
+          <label>My name <input id="annotatorInput" type="text" value="John Mnyika"></label>
+          <label>Google Sheet link <input id="spreadsheetUrlInput" type="url" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
+          <label>Apps Script endpoint (optional) <input id="spreadsheetEndpointInput" type="url" placeholder="https://script.google.com/macros/s/.../exec"></label>
+          <label>Assignment ID <input id="assignmentIdInput" type="text" placeholder="Optional batch/assignment ID"></label>
+          <button id="syncButton" type="button">Sync assignments</button>
+        </div>
+        <label class="pasteImport">
+          Quick import: copy the header and assignment rows from Google Sheets, then paste them here.
+          <textarea id="sheetPasteInput" rows="4" placeholder="Paste copied Google Sheets rows here (Camera, Frame, Annotator, Status …)"></textarea>
+        </label>
+        <button id="importPasteButton" type="button">Import pasted assignments</button>
+      </section>
+
       <section class="controls" aria-label="Dashboard controls">
         <input id="searchInput" type="search" placeholder="Search dataset, project, sequence, slice, or item ID">
         <select id="datasetFilter" aria-label="Filter by dataset">
@@ -37,6 +53,15 @@
           Daily goal
           <input id="goalInput" type="number" min="1" step="1" value="20">
         </label>
+      </section>
+
+      <section class="stats" aria-label="My spreadsheet assignment metrics">
+        <article><span id="myAssigned">0</span><p>My Assigned</p></article>
+        <article><span id="myInProgress">0</span><p>My In Progress</p></article>
+        <article><span id="myCompleted">0</span><p>My Completed</p></article>
+        <article><span id="myRemaining">0</span><p>My Remaining</p></article>
+        <article><span id="myActiveTime">0m</span><p>Active Time Today</p></article>
+        <article><span id="myFramesPerHour">0</span><p>Frames / Active Hour</p></article>
       </section>
 
       <section class="stats" aria-label="Summary metrics">
